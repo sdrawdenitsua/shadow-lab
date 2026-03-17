@@ -83,8 +83,16 @@ jobs:
         run: |
           sed -i 's/openxr\/enabled=true/openxr\/enabled=false/' Godot/project.godot
           sed -i 's/renderer\/rendering_method="forward_plus"/renderer\/rendering_method="mobile"/' Godot/project.godot
-          echo "--- rendering + xr settings after patch ---"
-          grep -E "rendering_method|openxr.enabled" Godot/project.godot
+          # Add ETC2/ASTC texture import required for Android export
+          if ! grep -q "import_etc2_astc" Godot/project.godot; then
+            sed -i '/^\[rendering\]/a import_etc2_astc=true' Godot/project.godot || true
+            # If no [rendering] section, append to [rendering/textures/vram_compression] or just add it
+            if ! grep -q "import_etc2_astc" Godot/project.godot; then
+              echo -e "\n[rendering]\n\ntextures/vram_compression/import_etc2_astc=true" >> Godot/project.godot
+            fi
+          fi
+          echo "--- rendering + xr + texture settings after patch ---"
+          grep -E "rendering_method|openxr.enabled|import_etc2_astc" Godot/project.godot
 
       - name: Import assets (first Godot pass - required for headless export)
         run: |
