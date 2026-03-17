@@ -11,10 +11,24 @@ keytool -genkeypair -v \
 echo "Keystore generated:"
 ls -lh /tmp/debug.keystore
 
+# Find Java SDK path (JAVA_HOME is set by setup-java action)
+JAVA_SDK="${JAVA_HOME}"
+echo "Java SDK: ${JAVA_SDK}"
+ls "${JAVA_SDK}/bin/java"
+
 mkdir -p ~/.config/godot
 
-echo "aW1wb3J0IG9zCmhvbWUgPSBvcy5wYXRoLmV4cGFuZHVzZXIoIn4iKQpwYXRoID0gb3MucGF0aC5qb2luKGhvbWUsICIuY29uZmlnIiwgImdvZG90IiwgImVkaXRvcl9zZXR0aW5ncy00LnRyZXMiKQpjb250ZW50ID0gJ1tnZF9yZXNvdXJjZSB0eXBlPSJFZGl0b3JTZXR0aW5ncyIgZm9ybWF0PTNdXG5cbltyZXNvdXJjZV1cbmV4cG9ydC9hbmRyb2lkL2FuZHJvaWRfc2RrX3BhdGggPSAiL3Vzci9sb2NhbC9saWIvYW5kcm9pZC9zZGsiXG5leHBvcnQvYW5kcm9pZC9kZWJ1Z19rZXlzdG9yZSA9ICIvdG1wL2RlYnVnLmtleXN0b3JlIlxuZXhwb3J0L2FuZHJvaWQvZGVidWdfa2V5c3RvcmVfdXNlciA9ICJhbmRyb2lkZGVidWdrZXkiXG5leHBvcnQvYW5kcm9pZC9kZWJ1Z19rZXlzdG9yZV9wYXNzID0gImFuZHJvaWQiXG4nCndpdGggb3BlbihwYXRoLCAndycpIGFzIGY6CiAgICBmLndyaXRlKGNvbnRlbnQpCnByaW50KCJXcm90ZToiLCBwYXRoKQpwcmludCgiQ29udGVudCByZXByOiIsIHJlcHIoY29udGVudCkpCg==" | base64 -d > /tmp/write_settings.py
-          python3 /tmp/write_settings.py
+# Write EditorSettings using tee with exact newlines
+{
+  echo '[gd_resource type="EditorSettings" format=3]'
+  echo ''
+  echo '[resource]'
+  echo "export/android/java_sdk_path = \"${JAVA_SDK}\""
+  echo 'export/android/android_sdk_path = "/usr/local/lib/android/sdk"'
+  echo 'export/android/debug_keystore = "/tmp/debug.keystore"'
+  echo 'export/android/debug_keystore_user = "androiddebugkey"'
+  echo 'export/android/debug_keystore_pass = "android"'
+} > ~/.config/godot/editor_settings-4.tres
 
-echo "Editor settings content:"
-cat ~/.config/godot/editor_settings-4.tres | cat -A
+echo "Editor settings written:"
+cat ~/.config/godot/editor_settings-4.tres
