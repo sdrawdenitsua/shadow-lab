@@ -76,6 +76,12 @@ jobs:
       - name: Create build directory
         run: mkdir -p build
 
+      - name: Disable OpenXR for headless CI export
+        run: |
+          sed -i 's/openxr\/enabled=true/openxr\/enabled=false/' Godot/project.godot
+          echo "project.godot XR section after patch:"
+          grep -A5 "\[xr\]" Godot/project.godot || echo "(xr section not found)"
+
       - name: Export APK (unsigned debug build)
         run: |
           cd Godot
