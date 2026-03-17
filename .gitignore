@@ -1,0 +1,29 @@
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+
+# Gemini API key — NEVER commit this
+Assets/Resources/GeminiConfig.asset
+*GeminiConfig.asset
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rider/VS
+.idea/
+.vs/
+*.csproj
+*.sln
