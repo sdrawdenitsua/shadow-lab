@@ -31,7 +31,7 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Install Android build tools
+      - name: Install Android NDK + build tools
         run: sdkmanager "build-tools;34.0.0" "platforms;android-34" "ndk;25.2.9519653"
 
       - name: Cache Godot engine + templates
@@ -41,16 +41,15 @@ jobs:
           path: |
             /usr/local/bin/godot
             ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}-v2
+          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}-v3
 
       - name: Install Godot ${{ env.GODOT_VERSION }}
         if: steps.cache-godot.outputs.cache-hit != 'true'
         run: |
           set -e
-          GODOT_FILENAME="Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64"
-          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/${GODOT_FILENAME}.zip" -O godot.zip
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64.zip" -O godot.zip
           unzip -q godot.zip
-          sudo mv "${GODOT_FILENAME}" /usr/local/bin/godot
+          sudo mv "Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64" /usr/local/bin/godot
           sudo chmod +x /usr/local/bin/godot
           godot --version
 
@@ -60,29 +59,38 @@ jobs:
           set -e
           TPL_DIR=~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}
           mkdir -p "$TPL_DIR"
-          TPL_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_export_templates.tpz"
-          wget -q "$TPL_URL" -O templates.tpz
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_export_templates.tpz" -O templates.tpz
           unzip -q templates.tpz -d /tmp/godot_tpl
           mv /tmp/godot_tpl/templates/* "$TPL_DIR/"
-          echo "Templates installed to $TPL_DIR"
-          ls "$TPL_DIR/" | grep android || echo "WARNING: no android template found"
+          ls "$TPL_DIR/" | grep android
 
-      - name: Set up Android keystore
+      - name: Decode keystore
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > /tmp/release.keystore
           echo "Keystore size: $(wc -c < /tmp/release.keystore) bytes"
 
-      - name: Configure Godot Android SDK path
+      - name: Write Godot editor settings
         run: |
           mkdir -p ~/.config/godot
-          cat > ~/.config/godot/editor_settings-4.tres << 'EOF'
-[gd_resource type="EditorSettings" format=3]
+          printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "/usr/local/lib/android/sdk"\n' > ~/.config/godot/editor_settings-4.tres
 
-[resource]
-export/android/android_sdk_path = "/usr/local/lib/android/sdk"
-EOF
+      - name: Patch export_presets with keystore
+        run: |
+          python3 -c "
+content = open('Godot/project/export_presets.cfg').read()
+patch = '''
+keystore/release=\"/tmp/release.keystore\"
+keystore/release_password=\"shadowlab123\"
+keystore/release_user=\"shadowlab\"
+'''
+if 'keystore/release=' not in content:
+    content = content.rstrip() + '\n' + patch
+open('Godot/project/export_presets.cfg', 'w').write(content)
+print('Patched OK')
+print(open('Godot/project/export_presets.cfg').read())
+"
 
-      - name: Create build output directory
+      - name: Create build directory
         run: mkdir -p build
 
       - name: Export APK
@@ -90,23 +98,20 @@ EOF
           cd Godot/project
           godot --headless --export-release "Android (Quest)" ../../build/${EXPORT_NAME}.apk 2>&1
         env:
-          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: /tmp/release.keystore
-          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEY_ALIAS }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Verify APK
         run: |
           if [ -f "build/${EXPORT_NAME}.apk" ]; then
-            echo "✅ APK built successfully"
+            echo "APK built successfully"
             ls -lh build/
           else
-            echo "❌ APK not found"
-            find . -name "*.apk" 2>/dev/null || echo "No APK anywhere"
+            echo "APK not found"
+            find . -name "*.apk" 2>/dev/null
             exit 1
           fi
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ShadowLab-Quest-APK
