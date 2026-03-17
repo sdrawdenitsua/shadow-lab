@@ -68,10 +68,23 @@ jobs:
       - name: Write Godot editor settings
         run: |
           mkdir -p ~/.config/godot
-          echo '[gd_resource type="EditorSettings" format=3]' > ~/.config/godot/editor_settings-4.tres
-          echo '' >> ~/.config/godot/editor_settings-4.tres
-          echo '[resource]' >> ~/.config/godot/editor_settings-4.tres
-          echo 'export/android/android_sdk_path = "/usr/local/lib/android/sdk"' >> ~/.config/godot/editor_settings-4.tres
+          # Generate a debug keystore for CI (Godot requires this even for unsigned builds)
+          keytool -genkeypair -v -keystore /tmp/debug.keystore -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null
+          cat > ~/.config/godot/editor_settings-4.tres << 'EDSETTINGS'
+[gd_resource type="EditorSettings" format=3]
+
+[resource]
+export/android/android_sdk_path = "/usr/local/lib/android/sdk"
+export/android/debug_keystore = "/tmp/debug.keystore"
+export/android/debug_keystore_user = "androiddebugkey"
+export/android/debug_keystore_pass = "android"
+export/android/force_system_user = false
+EDSETTINGS
+          echo "Editor settings written:"
+          cat ~/.config/godot/editor_settings-4.tres
 
       - name: Create build directory
         run: mkdir -p build
