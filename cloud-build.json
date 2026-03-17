@@ -1,0 +1,33 @@
+{
+  "projectName": "ShadowLab",
+  "bundleId": "com.shadowlab.vr",
+  "buildTargets": [
+    {
+      "name": "Android-Quest3S",
+      "platform": "android",
+      "unityVersion": "2022.3.20f1",
+      "settings": {
+        "buildSchedule": "always",
+        "autoBuild": true,
+        "branch": "main",
+        "scmType": "github",
+        "executablename": "ShadowLab",
+        "bundleId": "com.shadowlab.vr",
+        "unityVersion": "2022.3.20f1",
+        "androidVersionCode": 1,
+        "androidSdkVersion": "AndroidApiLevel29",
+        "androidTargetSdkVersion": "AndroidApiLevel32",
+        "androidSplitApplicationBinary": false,
+        "androidSymbols": "none",
+        "androidKeystore": {
+          "use": false
+        },
+        "buildTarget": "android",
+        "operatingSystemSelected": "mac",
+        "platform": {
+          "name": "Android"
+        }
+      }
+    }
+  ]
+}
