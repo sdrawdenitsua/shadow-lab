@@ -1,0 +1,19 @@
+[gd_resource type="OpenXRActionMap" format=3]
+
+[sub_resource type="OpenXRAction" id="OpenXRAction_grab"]
+name = "Grab"
+action_type = 1
+
+[sub_resource type="OpenXRAction" id="OpenXRAction_trigger"]
+name = "Trigger"
+action_type = 1
+
+[sub_resource type="OpenXRActionSet" id="OpenXRActionSet_gameplay"]
+name = "gameplay"
+localized_name = "Gameplay Actions"
+priority = 0
+actions = [SubResource("OpenXRAction_grab"), SubResource("OpenXRAction_trigger")]
+
+[resource]
+action_sets = [SubResource("OpenXRActionSet_gameplay")]
+interaction_profiles = []
