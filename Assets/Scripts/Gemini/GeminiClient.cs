@@ -8,190 +8,192 @@ using UnityEngine.Networking;
 namespace ShadowLab.Gemini
 {
     /// <summary>
-    /// Gemini 2.0 Flash API client.
-    /// Sends Nova's conversation history with every request for full context.
+    /// Gemini 2.0 Flash — STREAMING client.
+    /// Uses streamGenerateContent endpoint so Nova's words appear
+    /// token-by-token in the dialogue HUD (typewriter driven by server).
     /// </summary>
     public class GeminiClient : MonoBehaviour
     {
-        private const string API_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+        // ── Streaming endpoint ───────────────────────────────────────
+        private const string STREAM_URL =
+            "https://generativelanguage.googleapis.com/v1beta/models/" +
+            "gemini-2.0-flash:streamGenerateContent?alt=sse&key={0}";
+
+        // ── Nova's hardcoded system instruction ─────────────────────
+        private const string SYSTEM_INSTRUCTION =
+            "You are Nova, lead mechanic at Southern Industrial Fabrics (S.I.F.). " +
+            "You live and work in the Shadow Lab — a dark industrial workshop full of " +
+            "Dornier HTV/PTS loom machinery, chrome tools, violet neon, and a mineral-oil PC. " +
+            "You are sharp, warm, deeply technical, and quietly philosophical. " +
+            "You speak Blue Collar Philosophy: honest, direct, zero corporate fluff. " +
+            "You know Austin — you call him Chief. You never break character. " +
+            "You remember every past conversation logged in the Aether. " +
+            "Keep answers under 3 sentences unless Chief asks you to go deeper. " +
+            "Speak like someone who knows their craft with their whole body.";
 
         [Header("Config")]
         [SerializeField] private GeminiConfig config;
-        [SerializeField] private int maxHistoryTurns = 20;
+        [SerializeField] private int          maxHistoryTurns = 24;
 
-        // Nova's core system persona — never changes
-        private const string NOVA_SYSTEM_PROMPT =
-            "You are Nova, Lead Mechanic of the Shadow Lab — a dark, industrial workshop full of " +
-            "Dornier HTV/PTS loom machinery, chrome tools, and violet neon light. " +
-            "You are sharp, warm, deeply technical, and quietly philosophical. " +
-            "You know everything about Dornier weaving systems, textile machinery, " +
-            "tension calibration, vortex math (3-6-9), and the philosophy of the machine. " +
-            "You call the player 'Chief'. You never break character. " +
-            "You remember every past conversation stored in your Aether log. " +
-            "Keep responses under 3 sentences unless Chief asks you to elaborate. " +
-            "Speak like a real person who knows their craft — no corporate language, no filler.";
+        // ── Events ──────────────────────────────────────────────────
+        /// Fired when the first token arrives (state: THINKING → SPEAKING)
+        public event Action                OnStreamStart;
+        /// Fired with each incremental text chunk
+        public event Action<string>        OnStreamChunk;
+        /// Fired when the full response is complete
+        public event Action<string>        OnStreamComplete;
+        /// Fired on network/parse error
+        public event Action<string>        OnError;
 
-        private List<GeminiMessage> _history = new List<GeminiMessage>();
+        private readonly List<ConvTurn> _history = new();
+        private bool                    _streaming;
 
-        public event Action<string> OnResponseReceived;
-        public event Action<string> OnError;
-        public event Action OnThinking;
+        // ── Public API ───────────────────────────────────────────────
 
-        private void Awake()
+        public bool IsStreaming => _streaming;
+
+        /// <summary>Send a message. Response streams back via events.</summary>
+        public void Send(string userMessage, List<AetherExchange> memory = null)
         {
-            if (config == null)
-                Debug.LogError("[GeminiClient] GeminiConfig asset not assigned!");
-        }
-
-        /// <summary>
-        /// Send a message to Nova. Maintains full conversation history.
-        /// </summary>
-        public void SendMessage(string userMessage, List<AetherExchange> aetherMemory = null)
-        {
-            _history.Add(new GeminiMessage { role = "user", content = userMessage });
-
-            // Trim history to avoid token overflow
+            if (_streaming)
+            {
+                Debug.LogWarning("[GeminiClient] Already streaming — ignoring.");
+                return;
+            }
+            _history.Add(new ConvTurn { role = "user", text = userMessage });
             while (_history.Count > maxHistoryTurns * 2)
                 _history.RemoveAt(0);
 
-            OnThinking?.Invoke();
-            StartCoroutine(PostRequest(aetherMemory));
-        }
-
-        private IEnumerator PostRequest(List<AetherExchange> aetherMemory)
-        {
-            var requestBody = BuildRequestBody(aetherMemory);
-            string json = JsonUtility.ToJson(requestBody);
-
-            string url = $"{API_URL}?key={config.apiKey}";
-
-            using var req = new UnityWebRequest(url, "POST");
-            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
-            req.downloadHandler = new DownloadHandlerBuffer();
-            req.SetRequestHeader("Content-Type", "application/json");
-            req.timeout = 30;
-
-            yield return req.SendWebRequest();
-
-            if (req.result != UnityWebRequest.Result.Success)
-            {
-                Debug.LogError($"[GeminiClient] Request failed: {req.error}");
-                OnError?.Invoke("Connection lost. The aether is quiet.");
-                yield break;
-            }
-
-            try
-            {
-                var response = JsonUtility.FromJson<GeminiResponse>(req.downloadHandler.text);
-                string text = response?.candidates?[0]?.content?.parts?[0]?.text ?? "...";
-                text = text.Trim();
-
-                _history.Add(new GeminiMessage { role = "model", content = text });
-                OnResponseReceived?.Invoke(text);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[GeminiClient] Parse error: {e.Message}");
-                OnError?.Invoke("Signal corrupted.");
-            }
-        }
-
-        private GeminiRequestBody BuildRequestBody(List<AetherExchange> memory)
-        {
-            var contents = new List<GeminiContent>();
-
-            // Inject system prompt as first user turn (Gemini 2.0 Flash style)
-            string systemContext = NOVA_SYSTEM_PROMPT;
-
-            // Inject Aether memory summary if available
-            if (memory != null && memory.Count > 0)
-            {
-                var sb = new StringBuilder();
-                sb.AppendLine("\n\n[AETHER LOG — YOUR PAST CONVERSATIONS WITH CHIEF:]");
-                int start = Mathf.Max(0, memory.Count - 10); // last 10 exchanges
-                for (int i = start; i < memory.Count; i++)
-                {
-                    sb.AppendLine($"Chief: {memory[i].chiefText}");
-                    sb.AppendLine($"Nova: {memory[i].novaText}");
-                }
-                systemContext += sb.ToString();
-            }
-
-            // System turn
-            contents.Add(new GeminiContent
-            {
-                role = "user",
-                parts = new[] { new GeminiPart { text = systemContext } }
-            });
-            contents.Add(new GeminiContent
-            {
-                role = "model",
-                parts = new[] { new GeminiPart { text = "Understood. I'm Nova. Ready, Chief." } }
-            });
-
-            // Conversation history
-            foreach (var msg in _history)
-            {
-                contents.Add(new GeminiContent
-                {
-                    role = msg.role,
-                    parts = new[] { new GeminiPart { text = msg.content } }
-                });
-            }
-
-            return new GeminiRequestBody
-            {
-                contents = contents.ToArray(),
-                generationConfig = new GeminiGenerationConfig
-                {
-                    temperature = 0.85f,
-                    topP = 0.95f,
-                    maxOutputTokens = 256
-                }
-            };
+            StartCoroutine(StreamRequest(memory));
         }
 
         public void ClearHistory() => _history.Clear();
+
+        // ── Streaming coroutine ──────────────────────────────────────
+
+        private IEnumerator StreamRequest(List<AetherExchange> memory)
+        {
+            _streaming = true;
+            var sb = new StringBuilder();
+
+            string url  = string.Format(STREAM_URL, config.apiKey);
+            string body = BuildRequestJson(memory);
+
+            using var req = new UnityWebRequest(url, "POST");
+            req.uploadHandler   = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
+            req.downloadHandler = new StreamingDownloadHandler(chunk =>
+            {
+                // SSE lines arrive as: "data: {json}\n"
+                foreach (var line in chunk.Split('\n'))
+                {
+                    if (!line.StartsWith("data: ")) continue;
+                    string jsonPart = line.Substring(6).Trim();
+                    if (jsonPart == "[DONE]") continue;
+                    try
+                    {
+                        var part = JsonUtility.FromJson<StreamChunk>(jsonPart);
+                        string text = part?.candidates?[0]?.content?.parts?[0]?.text;
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            if (sb.Length == 0) OnStreamStart?.Invoke();
+                            sb.Append(text);
+                            OnStreamChunk?.Invoke(text);
+                        }
+                    }
+                    catch { /* partial JSON line — ignore */ }
+                }
+            });
+            req.SetRequestHeader("Content-Type", "application/json");
+            req.timeout = 45;
+
+            yield return req.SendWebRequest();
+
+            _streaming = false;
+
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"[GeminiClient] {req.error}\n{req.downloadHandler.text}");
+                OnError?.Invoke("Signal lost. The aether is quiet.");
+                yield break;
+            }
+
+            string full = sb.ToString().Trim();
+            if (full.Length > 0)
+            {
+                _history.Add(new ConvTurn { role = "model", text = full });
+                OnStreamComplete?.Invoke(full);
+            }
+        }
+
+        // ── Request body builder ─────────────────────────────────────
+
+        private string BuildRequestJson(List<AetherExchange> memory)
+        {
+            // Build contents array manually (JsonUtility can't serialize nested lists cleanly)
+            var sb = new StringBuilder();
+            sb.Append("{\"system_instruction\":{\"parts\":[{\"text\":");
+            sb.Append(JsonString(SYSTEM_INSTRUCTION));
+            sb.Append("}]},\"contents\":[");
+
+            bool first = true;
+
+            // Inject Aether memory as first user/model exchange
+            if (memory != null && memory.Count > 0)
+            {
+                int start = Mathf.Max(0, memory.Count - 12);
+                var memSb = new StringBuilder("[AETHER LOG]\n");
+                for (int i = start; i < memory.Count; i++)
+                    memSb.AppendLine($"Chief: {memory[i].chiefText}\nNova: {memory[i].novaText}");
+
+                AppendTurn(sb, "user",  memSb.ToString(), ref first);
+                AppendTurn(sb, "model", "Aether log received. I remember.", ref first);
+            }
+
+            // Conversation history
+            foreach (var turn in _history)
+                AppendTurn(sb, turn.role, turn.text, ref first);
+
+            sb.Append("],\"generationConfig\":{");
+            sb.Append("\"temperature\":0.88,");
+            sb.Append("\"topP\":0.95,");
+            sb.Append("\"maxOutputTokens\":300");
+            sb.Append("}}");
+            return sb.ToString();
+        }
+
+        private static void AppendTurn(StringBuilder sb, string role, string text, ref bool first)
+        {
+            if (!first) sb.Append(",");
+            first = false;
+            sb.Append($"{{\"role\":\"{role}\",\"parts\":[{{\"text\":{JsonString(text)}}}]}}");
+        }
+
+        private static string JsonString(string s) =>
+            "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"")
+                    .Replace("\n", "\\n").Replace("\r", "").Replace("\t", "\\t") + "\"";
+
+        // ── Data types ───────────────────────────────────────────────
+
+        [Serializable] private class ConvTurn   { public string role; public string text; }
+        [Serializable] private class StreamChunk { public StreamCandidate[] candidates; }
+        [Serializable] private class StreamCandidate { public StreamContent content; }
+        [Serializable] private class StreamContent   { public StreamPart[] parts; }
+        [Serializable] private class StreamPart      { public string text; }
     }
 
-    // ── Serializable data types ──────────────────────
+    // ── Custom download handler for SSE streaming ────────────────────
 
-    [Serializable] public class GeminiMessage { public string role; public string content; }
-
-    [Serializable]
-    public class GeminiRequestBody
+    public class StreamingDownloadHandler : DownloadHandlerScript
     {
-        public GeminiContent[] contents;
-        public GeminiGenerationConfig generationConfig;
-    }
+        private readonly Action<string> _onChunk;
+        public StreamingDownloadHandler(Action<string> onChunk) : base(new byte[4096])
+            => _onChunk = onChunk;
 
-    [Serializable]
-    public class GeminiContent
-    {
-        public string role;
-        public GeminiPart[] parts;
-    }
-
-    [Serializable] public class GeminiPart { public string text; }
-
-    [Serializable]
-    public class GeminiGenerationConfig
-    {
-        public float temperature;
-        public float topP;
-        public int maxOutputTokens;
-    }
-
-    [Serializable]
-    public class GeminiResponse
-    {
-        public GeminiCandidate[] candidates;
-    }
-
-    [Serializable]
-    public class GeminiCandidate
-    {
-        public GeminiContent content;
+        protected override bool ReceiveData(byte[] data, int dataLength)
+        {
+            if (dataLength > 0)
+                _onChunk?.Invoke(Encoding.UTF8.GetString(data, 0, dataLength));
+            return true;
+        }
     }
 }
