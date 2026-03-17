@@ -92,14 +92,13 @@ jobs:
 
       - name: Import assets (first Godot pass - required for headless export)
         run: |
-          cd Godot
-          godot --headless --editor --quit 2>&1 || true
+          godot --headless --path "$GITHUB_WORKSPACE/Godot" --editor --quit 2>&1 || true
           echo "Import pass complete."
+          ls -la "$GITHUB_WORKSPACE/Godot/.godot/" 2>/dev/null || echo "No .godot dir yet"
 
       - name: Export APK (unsigned debug build)
         run: |
-          cd Godot
-          godot --headless --verbose --export-debug "Android (Quest)" ../build/${EXPORT_NAME}.apk 2>&1 || true
+          godot --headless --verbose --path "$GITHUB_WORKSPACE/Godot" --export-debug "Android (Quest)" "$GITHUB_WORKSPACE/build/${EXPORT_NAME}.apk" 2>&1 || true
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
