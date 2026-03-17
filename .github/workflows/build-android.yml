@@ -1,0 +1,57 @@
+name: Build Shadow Lab APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # allows manual trigger from GitHub website
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-Android-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-Android-
+            Library-
+
+      - name: Build Android APK
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          targetPlatform: Android
+          unityVersion: 2022.3.20f1
+          androidExportType: androidPackage
+          androidKeystoreName: ""
+          androidKeystoreBase64: ""
+          androidKeystorePass: ""
+          androidKeyaliasName: ""
+          androidKeyaliasPass: ""
+          buildName: ShadowLab
+          buildsPath: build
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShadowLab-Android
+          path: build/Android/ShadowLab.apk
+          retention-days: 14
+
+      - name: Build summary
+        run: |
+          echo "## ✅ Shadow Lab APK Built!" >> $GITHUB_STEP_SUMMARY
+          echo "Download the APK from the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
+          echo "Sideload to Quest 3S via SideQuest mobile." >> $GITHUB_STEP_SUMMARY
