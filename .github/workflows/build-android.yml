@@ -82,6 +82,12 @@ jobs:
           echo "project.godot XR section after patch:"
           grep -A5 "\[xr\]" Godot/project.godot || echo "(xr section not found)"
 
+      - name: Import assets (first Godot pass - required for headless export)
+        run: |
+          cd Godot
+          godot --headless --editor --quit 2>&1 || true
+          echo "Import pass complete."
+
       - name: Export APK (unsigned debug build)
         run: |
           cd Godot
