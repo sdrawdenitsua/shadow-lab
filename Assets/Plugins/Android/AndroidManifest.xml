@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.shadowlab.vr"
+    android:versionCode="1"
+    android:versionName="0.1.0"
+    android:installLocation="auto">
+
+  <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="32"/>
+
+  <!-- Quest 3S VR requirements -->
+  <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1"/>
+  <uses-feature android:name="oculus.software.handtracking" android:required="false"/>
+  <uses-feature android:name="com.oculus.feature.PASSTHROUGH" android:required="false"/>
+
+  <!-- Permissions -->
+  <uses-permission android:name="android.permission.VIBRATE"/>
+  <uses-permission android:name="com.oculus.permission.HAND_TRACKING"/>
+  <uses-permission android:name="android.permission.INTERNET"/>
+
+  <application
+      android:label="Shadow Lab"
+      android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+      android:launchMode="singleTask"
+      android:screenOrientation="landscape"
+      android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
+      android:hardwareAccelerated="true">
+
+    <activity
+        android:name="com.unity3d.player.UnityPlayerActivity"
+        android:label="Shadow Lab"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+        <category android:name="com.oculus.intent.category.VR"/>
+      </intent-filter>
+
+      <!-- Quest 3S display configuration -->
+      <meta-data android:name="com.oculus.vr.focusaware" android:value="true"/>
+      <meta-data android:name="com.samsung.android.vr.application.mode" android:value="vr_only"/>
+    </activity>
+
+    <!-- Hand tracking -->
+    <meta-data android:name="com.oculus.handtracking.frequency" android:value="HIGH"/>
+    <meta-data android:name="com.oculus.handtracking.version" android:value="V2.0"/>
+
+    <!-- Passthrough -->
+    <meta-data android:name="com.oculus.ossplash" android:value="true"/>
+
+    <!-- System splash screen -->
+    <meta-data android:name="com.oculus.notificationfilterlevel" android:value="low"/>
+
+  </application>
+</manifest>
