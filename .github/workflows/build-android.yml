@@ -92,6 +92,25 @@ jobs:
           echo "Import pass complete."
           ls -la "$GITHUB_WORKSPACE/Godot/.godot/" 2>/dev/null || echo "No .godot dir yet"
 
+      - name: Diagnose Android SDK layout
+        run: |
+          echo "=== SDK structure ==="
+          ls /usr/local/lib/android/sdk/
+          echo "=== build-tools ==="
+          ls /usr/local/lib/android/sdk/build-tools/ || echo "NONE"
+          echo "=== platforms ==="
+          ls /usr/local/lib/android/sdk/platforms/ || echo "NONE"
+          echo "=== ndk ==="
+          ls /usr/local/lib/android/sdk/ndk/ || echo "NONE"
+          echo "=== adb ==="
+          ls /usr/local/lib/android/sdk/platform-tools/adb || echo "NO ADB"
+          echo "=== export_presets.cfg ==="
+          cat $GITHUB_WORKSPACE/Godot/export_presets.cfg
+          echo "=== editor settings ==="
+          cat ~/.config/godot/editor_settings-4.tres
+          echo "=== keystore ==="
+          ls -lh /tmp/debug.keystore || echo "NO KEYSTORE"
+
       - name: Export APK (unsigned debug build)
         run: |
           godot --headless --verbose --path "$GITHUB_WORKSPACE/Godot" --export-debug "Android (Quest)" "$GITHUB_WORKSPACE/build/${EXPORT_NAME}.apk" 2>&1 || true
