@@ -76,10 +76,20 @@ jobs:
       - name: Create build directory
         run: mkdir -p build
 
+      - name: List project files
+        run: |
+          echo "=== Godot/ root ==="
+          ls -la Godot/
+          echo "=== export_presets.cfg ==="
+          cat Godot/export_presets.cfg
+
       - name: Export APK
         run: |
           cd Godot
-          godot --headless --export-release "Android (Quest)" ../build/${EXPORT_NAME}.apk 2>&1
+          godot --headless --verbose --export-release "Android (Quest)" ../build/${EXPORT_NAME}.apk 2>&1 || true
+          echo "Exit: $?"
+          ls -la ../build/ || echo "No build dir"
+        continue-on-error: false
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
