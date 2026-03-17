@@ -73,22 +73,13 @@ jobs:
           echo '[resource]' >> ~/.config/godot/editor_settings-4.tres
           echo 'export/android/android_sdk_path = "/usr/local/lib/android/sdk"' >> ~/.config/godot/editor_settings-4.tres
 
-      - name: Inject keystore credentials into export_presets.cfg
-        env:
-          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          sed -i "s|KEYSTORE_PASS_PLACEHOLDER|${KEYSTORE_PASS}|g" Godot/export_presets.cfg
-          sed -i "s|KEY_ALIAS_PLACEHOLDER|${KEY_ALIAS}|g" Godot/export_presets.cfg
-          echo "Presets patched with real credentials."
-
       - name: Create build directory
         run: mkdir -p build
 
-      - name: Export APK
+      - name: Export APK (unsigned debug build)
         run: |
           cd Godot
-          godot --headless --export-release "Android (Quest)" ../build/${EXPORT_NAME}.apk 2>&1
+          godot --headless --export-debug "Android (Quest)" ../build/${EXPORT_NAME}.apk 2>&1
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
