@@ -68,9 +68,21 @@ jobs:
       - name: Write Godot editor settings
         run: |
           mkdir -p ~/.config/godot
-          keytool -genkeypair -v -keystore /tmp/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
-          printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "/usr/local/lib/android/sdk"\nexport/android/debug_keystore = "/tmp/debug.keystore"\nexport/android/debug_keystore_user = "androiddebugkey"\nexport/android/debug_keystore_pass = "android"\n' > ~/.config/godot/editor_settings-4.tres
-          echo "Editor settings written:"
+          keytool -genkeypair -v -keystore /tmp/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
+          ls -lh /tmp/debug.keystore
+          python3 -c "
+content = '''[gd_resource type=\"EditorSettings\" format=3]
+
+[resource]
+export/android/android_sdk_path = \"/usr/local/lib/android/sdk\"
+export/android/debug_keystore = \"/tmp/debug.keystore\"
+export/android/debug_keystore_user = \"androiddebugkey\"
+export/android/debug_keystore_pass = \"android\"
+'''
+with open('/root/.config/godot/editor_settings-4.tres', 'w') as f:
+    f.write(content)
+print('Editor settings written OK')
+"
           cat ~/.config/godot/editor_settings-4.tres
 
       - name: Create build directory
