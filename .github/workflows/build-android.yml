@@ -1,57 +1,94 @@
-name: Build Shadow Lab APK
+name: Build Shadow Lab APK (Godot)
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:  # allows manual trigger from GitHub website
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
-    
+
+    env:
+      GODOT_VERSION: "4.3"
+      GODOT_RELEASE: "stable"
+      EXPORT_NAME: "ShadowLab"
+
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           lfs: true
 
-      - name: Cache Unity Library
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android build tools
+        run: sdkmanager "build-tools;34.0.0" "platforms;android-34" "ndk;25.2.9519653"
+
+      - name: Cache Godot
+        id: cache-godot
         uses: actions/cache@v4
         with:
-          path: Library
-          key: Library-Android-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
-          restore-keys: |
-            Library-Android-
-            Library-
+          path: |
+            ~/.local/share/godot
+            /usr/local/bin/godot
+          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}
 
-      - name: Build Android APK
-        uses: game-ci/unity-builder@v4
+      - name: Download Godot ${{ env.GODOT_VERSION }}
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          GODOT_FILENAME="Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64"
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/${GODOT_FILENAME}.zip"
+          unzip -q "${GODOT_FILENAME}.zip"
+          sudo mv "${GODOT_FILENAME}" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          echo "Godot installed: $(godot --version)"
+
+      - name: Download Godot export templates
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          TEMPLATES_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_export_templates.tpz"
+          wget -q "$TEMPLATES_URL" -O export_templates.tpz
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}
+          unzip -q export_templates.tpz -d /tmp/templates
+          mv /tmp/templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}/
+          echo "Export templates installed."
+
+      - name: Set up Android keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > /tmp/release.keystore
+
+      - name: Create build directory
+        run: mkdir -p build
+
+      - name: Export Android APK
+        run: |
+          godot --headless --export-release "Android (Quest)" build/${{ env.EXPORT_NAME }}.apk --path Godot/project
         env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        with:
-          targetPlatform: Android
-          unityVersion: 2022.3.20f1
-          androidExportType: androidPackage
-          androidKeystoreName: ""
-          androidKeystoreBase64: ""
-          androidKeystorePass: ""
-          androidKeyaliasName: ""
-          androidKeyaliasPass: ""
-          buildName: ShadowLab
-          buildsPath: build
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: /tmp/release.keystore
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEY_ALIAS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ShadowLab-Android
-          path: build/Android/ShadowLab.apk
+          name: ShadowLab-APK
+          path: build/${{ env.EXPORT_NAME }}.apk
           retention-days: 14
 
       - name: Build summary
         run: |
-          echo "## ✅ Shadow Lab APK Built!" >> $GITHUB_STEP_SUMMARY
-          echo "Download the APK from the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
-          echo "Sideload to Quest 3S via SideQuest mobile." >> $GITHUB_STEP_SUMMARY
+          ls -lh build/ || echo "No build output"
+          echo "Shadow Lab Godot build complete."
