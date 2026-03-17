@@ -1,123 +1,174 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit;
 
 namespace ShadowLab.Physics
 {
     /// <summary>
-    /// Master controller for all physics-based hand interactions.
-    /// Wraps XR Interaction Toolkit with Shadow Lab-specific behavior:
-    /// weight simulation, two-handed grabs, surface resistance.
-    /// Attach one per hand controller.
+    /// Hand physics controller for Quest 3S.
+    ///
+    /// Wraps XRDirectInteractor with:
+    ///   • Weight-based haptic feedback on grab (OnSelectEntered)
+    ///   • Continuous hold rumble proportional to Rigidbody.mass
+    ///   • Throw velocity calculated from a rolling average of hand velocities
+    ///   • Surface resistance haptic on slow-drag (for knobs, levers)
+    ///   • Impact haptic on collision (routed from grabbed object)
     /// </summary>
+    [RequireComponent(typeof(XRController))]
+    [RequireComponent(typeof(XRDirectInteractor))]
     public class PhysicsInteractionController : MonoBehaviour
     {
         [Header("Hand")]
-        [SerializeField] private XRController    xrController;
-        [SerializeField] private XRDirectInteractor interactor;
-        [SerializeField] private Transform       handTransform;
-        [SerializeField] private bool            isRightHand = true;
+        [SerializeField] private bool isRightHand = true;
 
         [Header("Haptics")]
-        [SerializeField] private float baseHapticAmplitude = 0.3f;
-        [SerializeField] private float maxHapticAmplitude  = 1.0f;
+        [SerializeField] private float grabHapticBase    = 0.25f;  // minimum on any grab
+        [SerializeField] private float grabHapticPerKg   = 0.07f;  // added per kg of mass
+        [SerializeField] private float holdHapticPerKg   = 0.018f; // continuous hold rumble per kg
+        [SerializeField] private float maxHapticAmplitude= 1.0f;
 
         [Header("Throw")]
-        [SerializeField] private float throwMultiplier = 1.4f;
-        [SerializeField] private int   velocitySampleCount = 5;
+        [SerializeField] private int   velocitySamples   = 6;
+        [SerializeField] private float throwMultiplier   = 1.35f;
+        [SerializeField] private float angularThrowMult  = 0.9f;
 
-        private Queue<Vector3>   _velocitySamples = new Queue<Vector3>();
-        private Vector3          _prevHandPos;
-        private IXRGrabInteractable _heldObject;
-        private float            _heldObjectMass = 1f;
+        // ── Runtime ──────────────────────────────────────────────────
+        private XRController       _controller;
+        private XRDirectInteractor _interactor;
+
+        private IXRSelectInteractable _held;
+        private Rigidbody             _heldRb;
+        private float                 _heldMass;
+
+        private readonly Queue<Vector3> _velSamples  = new();
+        private readonly Queue<Vector3> _angSamples  = new();
+        private Vector3 _prevPos;
+        private Vector3 _prevRot;
+
+        // ── Lifecycle ─────────────────────────────────────────────────
+
+        private void Awake()
+        {
+            _controller = GetComponent<XRController>();
+            _interactor = GetComponent<XRDirectInteractor>();
+        }
 
         private void OnEnable()
         {
-            interactor.selectEntered.AddListener(OnGrab);
-            interactor.selectExited.AddListener(OnRelease);
+            _interactor.selectEntered.AddListener(OnSelectEntered);
+            _interactor.selectExited.AddListener(OnSelectExited);
         }
 
         private void OnDisable()
         {
-            interactor.selectEntered.RemoveListener(OnGrab);
-            interactor.selectExited.RemoveListener(OnRelease);
+            _interactor.selectEntered.RemoveListener(OnSelectEntered);
+            _interactor.selectExited.RemoveListener(OnSelectExited);
         }
 
         private void Update()
         {
-            // Track hand velocity for throw calculation
-            Vector3 vel = (handTransform.position - _prevHandPos) / Time.deltaTime;
-            _velocitySamples.Enqueue(vel);
-            if (_velocitySamples.Count > velocitySampleCount)
-                _velocitySamples.Dequeue();
-            _prevHandPos = handTransform.position;
-
-            // Weight-based haptic feedback when holding heavy objects
-            if (_heldObject != null)
-            {
-                float weightFeedback = Mathf.Clamp01(_heldObjectMass / 10f) * 0.15f;
-                if (weightFeedback > 0.05f)
-                    SendHaptic(weightFeedback, 0.05f);
-            }
+            SampleVelocity();
+            HoldHaptics();
         }
 
-        private void OnGrab(SelectEnterEventArgs args)
+        // ── Grab / Release ────────────────────────────────────────────
+
+        private void OnSelectEntered(SelectEnterEventArgs args)
         {
-            _heldObject = args.interactableObject;
+            _held  = args.interactableObject;
+            _heldRb = (_held as MonoBehaviour)?.GetComponent<Rigidbody>();
+            _heldMass = _heldRb ? _heldRb.mass : 0.5f;
 
-            // Get mass if the object has a Rigidbody
-            if (args.interactableObject is MonoBehaviour mb)
-            {
-                var rb = mb.GetComponent<Rigidbody>();
-                _heldObjectMass = rb ? rb.mass : 1f;
-            }
+            // Haptic: base + mass-scaled impulse
+            float amp = Mathf.Clamp(grabHapticBase + _heldMass * grabHapticPerKg, 0f, maxHapticAmplitude);
+            Haptic(amp, 0.14f);
 
-            // Haptic pulse on pickup — stronger for heavier objects
-            float hapticStrength = Mathf.Lerp(0.2f, 0.8f, Mathf.Clamp01(_heldObjectMass / 8f));
-            SendHaptic(hapticStrength, 0.12f);
+            // Notify ILabInteractable
+            (_held as ILabInteractable)?.OnGrabbed(this);
 
-            // Notify the interactable about being grabbed
-            if (args.interactableObject is ILabInteractable labItem)
-                labItem.OnGrabbed(this);
+            _velSamples.Clear();
+            _angSamples.Clear();
         }
 
-        private void OnRelease(SelectExitEventArgs args)
+        private void OnSelectExited(SelectExitEventArgs args)
         {
-            // Calculate throw velocity from recent samples
-            Vector3 avgVelocity = Vector3.zero;
-            foreach (var v in _velocitySamples) avgVelocity += v;
-            if (_velocitySamples.Count > 0)
-                avgVelocity /= _velocitySamples.Count;
-
-            if (args.interactableObject is MonoBehaviour mb)
+            // Apply throw velocity
+            if (_heldRb != null)
             {
-                var rb = mb.GetComponent<Rigidbody>();
-                if (rb) rb.linearVelocity = avgVelocity * throwMultiplier;
+                _heldRb.linearVelocity        = AverageVelocity(_velSamples) * throwMultiplier;
+                _heldRb.angularVelocity = AverageVelocity(_angSamples) * angularThrowMult;
             }
 
-            if (args.interactableObject is ILabInteractable labItem)
-                labItem.OnReleased(this);
+            (_held as ILabInteractable)?.OnReleased(this);
+            Haptic(0.08f, 0.05f);
 
-            SendHaptic(0.1f, 0.05f);
-            _heldObject = null;
-            _heldObjectMass = 1f;
+            _held     = null;
+            _heldRb   = null;
+            _heldMass = 0f;
         }
 
-        public void SendHaptic(float amplitude, float duration)
+        // ── Haptics ───────────────────────────────────────────────────
+
+        public void Haptic(float amplitude, float duration)
         {
-            xrController?.SendHapticImpulse(
+            _controller?.SendHapticImpulse(
                 Mathf.Clamp(amplitude, 0f, maxHapticAmplitude), duration);
         }
 
-        public void SendHapticImpact(float mass, float impactForce)
+        /// <summary>
+        /// Call this from LoomTensionMechanism when the knob moves.
+        /// Gives resistance feel proportional to how hard the player is pulling.
+        /// </summary>
+        public void ResistanceHaptic(float normalizedForce)
         {
-            float strength = Mathf.Clamp01((mass * impactForce) / 20f) * maxHapticAmplitude;
-            SendHaptic(strength, 0.08f);
+            float amp = Mathf.Clamp01(normalizedForce) * 0.55f;
+            Haptic(amp, 0.03f);
+        }
+
+        /// <summary>
+        /// Call from collision callbacks on held objects.
+        /// </summary>
+        public void ImpactHaptic(float impulseMagnitude)
+        {
+            float amp = Mathf.Clamp01(impulseMagnitude / 15f) * maxHapticAmplitude;
+            Haptic(amp, 0.08f);
+        }
+
+        // ── Velocity tracking ─────────────────────────────────────────
+
+        private void SampleVelocity()
+        {
+            Vector3 vel = (transform.position    - _prevPos) / Time.deltaTime;
+            Vector3 ang = (transform.eulerAngles - _prevRot) / Time.deltaTime;
+
+            _velSamples.Enqueue(vel);
+            _angSamples.Enqueue(ang);
+
+            while (_velSamples.Count > velocitySamples) _velSamples.Dequeue();
+            while (_angSamples.Count > velocitySamples) _angSamples.Dequeue();
+
+            _prevPos = transform.position;
+            _prevRot = transform.eulerAngles;
+        }
+
+        private void HoldHaptics()
+        {
+            if (_held == null || _heldMass < 2f) return;
+            // Subtle continuous rumble for heavy objects
+            float amp = Mathf.Clamp(_heldMass * holdHapticPerKg, 0f, 0.22f);
+            if (Random.value < Time.deltaTime * 8f) // ~8 impulses per second
+                Haptic(amp, 0.06f);
+        }
+
+        private static Vector3 AverageVelocity(Queue<Vector3> samples)
+        {
+            Vector3 sum = Vector3.zero;
+            foreach (var v in samples) sum += v;
+            return samples.Count > 0 ? sum / samples.Count : Vector3.zero;
         }
     }
 
-    /// <summary>Interface for all interactive Shadow Lab objects.</summary>
+    // ── Interface all grabbable lab objects implement ─────────────────
     public interface ILabInteractable
     {
         void OnGrabbed(PhysicsInteractionController hand);
