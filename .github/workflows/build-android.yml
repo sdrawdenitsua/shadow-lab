@@ -84,11 +84,12 @@ jobs:
           echo "=== Android templates ==="
           ls "$TPL_DIR"/*android* 2>/dev/null || echo "NO android templates found!"
 
-      - name: Disable OpenXR for headless CI export
+      - name: Patch project.godot for Android CI export
         run: |
           sed -i 's/openxr\/enabled=true/openxr\/enabled=false/' Godot/project.godot
-          echo "project.godot XR section after patch:"
-          grep -A5 "\[xr\]" Godot/project.godot || echo "(xr section not found)"
+          sed -i 's/renderer\/rendering_method="forward_plus"/renderer\/rendering_method="mobile"/' Godot/project.godot
+          echo "--- rendering + xr settings after patch ---"
+          grep -E "rendering_method|openxr.enabled" Godot/project.godot
 
       - name: Import assets (first Godot pass - required for headless export)
         run: |
