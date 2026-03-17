@@ -1,0 +1,35 @@
+[gd_resource type="ProjectSettings" format=3]
+
+[application]
+config/name="Shadow Lab"
+config/description="Industrial Noir Physics-Based VR Simulation"
+run/main_scene="res://scenes/ShadowLab.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+boot_splash/bg_color=Color(0.02, 0.02, 0.05, 1)
+config/icon="res://icon.svg"
+
+[display]
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/stretch/mode="canvas_items"
+
+[rendering]
+renderer/rendering_method="forward_plus"
+environment/defaults/default_clear_color=Color(0.02, 0.02, 0.05, 1)
+
+[xr]
+openxr/enabled=true
+openxr/default_action_map="res://openxr_action_map.tres"
+openxr/form_factor="1"
+openxr/view_configuration="1"
+openxr/reference_space="1"
+
+[input]
+grab={
+"deadzone": 0.5,
+"events": [Object(InputEventJoypadButton,"resource_local_to_scene":false,"resource_name":"","device":0,"button_index":15,"pressure":0.0,"pressed":false,"meta":{})]
+}
+trigger={
+"deadzone": 0.5,
+"events": [Object(InputEventJoypadButton,"resource_local_to_scene":false,"resource_name":"","device":0,"button_index":15,"pressure":0.0,"pressed":false,"meta":{})]
+}
