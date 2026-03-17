@@ -41,12 +41,11 @@ jobs:
           path: |
             /usr/local/bin/godot
             ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}-v3
+          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}-v4
 
       - name: Install Godot ${{ env.GODOT_VERSION }}
         if: steps.cache-godot.outputs.cache-hit != 'true'
         run: |
-          set -e
           wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64.zip" -O godot.zip
           unzip -q godot.zip
           sudo mv "Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64" /usr/local/bin/godot
@@ -56,7 +55,6 @@ jobs:
       - name: Install Godot export templates
         if: steps.cache-godot.outputs.cache-hit != 'true'
         run: |
-          set -e
           TPL_DIR=~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}
           mkdir -p "$TPL_DIR"
           wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_export_templates.tpz" -O templates.tpz
@@ -65,30 +63,18 @@ jobs:
           ls "$TPL_DIR/" | grep android
 
       - name: Decode keystore
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > /tmp/release.keystore
-          echo "Keystore size: $(wc -c < /tmp/release.keystore) bytes"
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > /tmp/release.keystore
 
       - name: Write Godot editor settings
         run: |
           mkdir -p ~/.config/godot
-          printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "/usr/local/lib/android/sdk"\n' > ~/.config/godot/editor_settings-4.tres
+          echo '[gd_resource type="EditorSettings" format=3]' > ~/.config/godot/editor_settings-4.tres
+          echo '' >> ~/.config/godot/editor_settings-4.tres
+          echo '[resource]' >> ~/.config/godot/editor_settings-4.tres
+          echo 'export/android/android_sdk_path = "/usr/local/lib/android/sdk"' >> ~/.config/godot/editor_settings-4.tres
 
-      - name: Patch export_presets with keystore
-        run: |
-          python3 -c "
-content = open('Godot/project/export_presets.cfg').read()
-patch = '''
-keystore/release=\"/tmp/release.keystore\"
-keystore/release_password=\"shadowlab123\"
-keystore/release_user=\"shadowlab\"
-'''
-if 'keystore/release=' not in content:
-    content = content.rstrip() + '\n' + patch
-open('Godot/project/export_presets.cfg', 'w').write(content)
-print('Patched OK')
-print(open('Godot/project/export_presets.cfg').read())
-"
+      - name: Patch export presets with keystore
+        run: python3 Godot/scripts/ci/patch_presets.py
 
       - name: Create build directory
         run: mkdir -p build
@@ -100,18 +86,10 @@ print(open('Godot/project/export_presets.cfg').read())
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-      - name: Verify APK
-        run: |
-          if [ -f "build/${EXPORT_NAME}.apk" ]; then
-            echo "APK built successfully"
-            ls -lh build/
-          else
-            echo "APK not found"
-            find . -name "*.apk" 2>/dev/null
-            exit 1
-          fi
+      - name: Verify and upload APK
+        run: ls -lh build/
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ShadowLab-Quest-APK
