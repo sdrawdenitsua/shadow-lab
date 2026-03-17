@@ -1,0 +1,23 @@
+name: Unity License Activation
+on:
+  workflow_dispatch:
+
+jobs:
+  activate:
+    name: Request Unity License File
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request Unity license file
+        uses: game-ci/unity-activate@v2
+        with:
+          unityVersion: 2022.3.20f1
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Upload license file as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Unity_License
+          path: Unity_v2022.x.ulf
+          retention-days: 1
