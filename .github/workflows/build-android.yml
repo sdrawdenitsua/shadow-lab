@@ -99,7 +99,7 @@ jobs:
       - name: Export APK (unsigned debug build)
         run: |
           cd Godot
-          godot --headless --export-debug "Android (Quest)" ../build/${EXPORT_NAME}.apk 2>&1
+          godot --headless --verbose --export-debug "Android (Quest)" ../build/${EXPORT_NAME}.apk 2>&1 || true
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
